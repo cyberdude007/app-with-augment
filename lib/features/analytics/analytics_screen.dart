@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fl_chart/fl_chart.dart';
 
 import '../../app/theme/tokens.dart';
 import '../../core/money/money.dart';
 import '../../core/utils/date_fmt.dart';
 import '../../widgets/stat_card.dart';
 
-/// Analytics screen showing spending insights
+/// Analytics screen with Consumption vs Cashflow toggle and time period tabs
 class AnalyticsScreen extends ConsumerStatefulWidget {
   const AnalyticsScreen({super.key});
 
@@ -17,12 +18,12 @@ class AnalyticsScreen extends ConsumerStatefulWidget {
 class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  DateRange _selectedRange = DateRange.thisMonth;
+  AnalyticsMode _selectedMode = AnalyticsMode.consumption;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 2, vsync: this);
   }
 
   @override
@@ -38,514 +39,515 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen>
     return Scaffold(
       appBar: AppBar(
         title: const Text('Analytics'),
-        actions: [
-          PopupMenuButton<DateRange>(
-            icon: const Icon(Icons.date_range),
-            onSelected: (range) {
-              setState(() {
-                _selectedRange = range;
-              });
-            },
-            itemBuilder: (context) => DateRange.values.map((range) {
-              return PopupMenuItem(
-                value: range,
-                child: Row(
-                  children: [
-                    if (_selectedRange == range)
-                      Icon(
-                        Icons.check,
-                        size: AppTokens.iconSm,
-                        color: theme.colorScheme.primary,
-                      )
-                    else
-                      const SizedBox(width: AppTokens.iconSm),
-                    const SizedBox(width: AppTokens.space2),
-                    Text(range.displayName),
-                  ],
-                ),
-              );
-            }).toList(),
-          ),
-        ],
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
-            Tab(text: 'Overview'),
-            Tab(text: 'Categories'),
-            Tab(text: 'Trends'),
+            Tab(text: 'This Month'),
+            Tab(text: 'Last 6 Months'),
           ],
         ),
       ),
-      body: TabBarView(
-        controller: _tabController,
+      body: Column(
         children: [
-          _buildOverviewTab(),
-          _buildCategoriesTab(),
-          _buildTrendsTab(),
+          // Analytics mode toggle
+          _buildModeToggle(),
+          
+          // Content
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                _buildThisMonthView(),
+                _buildLast6MonthsView(),
+              ],
+            ),
+          ),
         ],
       ),
     );
   }
 
-  /// Build overview tab
-  Widget _buildOverviewTab() {
-    return RefreshIndicator(
-      onRefresh: _onRefresh,
-      child: SingleChildScrollView(
-        padding: AppTokens.screenPadding,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Period selector
-            _buildPeriodHeader(),
-            const SizedBox(height: AppTokens.space6),
-
-            // Summary cards
-            _buildSummaryCards(),
-            const SizedBox(height: AppTokens.space6),
-
-            // Recent activity
-            _buildRecentActivity(),
-          ],
+  Widget _buildModeToggle() {
+    return Container(
+      margin: const EdgeInsets.all(AppTokens.space4),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
+        borderRadius: BorderRadius.circular(AppTokens.radiusLg),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.outline.withOpacity(0.2),
+          width: 1,
         ),
       ),
-    );
-  }
+      child: Row(
+        children: AnalyticsMode.values.map((mode) {
+          final isSelected = mode == _selectedMode;
+          final isFirst = mode == AnalyticsMode.values.first;
+          final isLast = mode == AnalyticsMode.values.last;
 
-  /// Build categories tab
-  Widget _buildCategoriesTab() {
-    return RefreshIndicator(
-      onRefresh: _onRefresh,
-      child: SingleChildScrollView(
-        padding: AppTokens.screenPadding,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Period header
-            _buildPeriodHeader(),
-            const SizedBox(height: AppTokens.space6),
-
-            // Category breakdown
-            _buildCategoryBreakdown(),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Build trends tab
-  Widget _buildTrendsTab() {
-    return RefreshIndicator(
-      onRefresh: _onRefresh,
-      child: SingleChildScrollView(
-        padding: AppTokens.screenPadding,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Period header
-            _buildPeriodHeader(),
-            const SizedBox(height: AppTokens.space6),
-
-            // Spending trends
-            _buildSpendingTrends(),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Build period header
-  Widget _buildPeriodHeader() {
-    final theme = Theme.of(context);
-    final (startDate, endDate) = _getDateRange();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          _selectedRange.displayName,
-          style: theme.textTheme.headlineSmall,
-        ),
-        const SizedBox(height: AppTokens.space1),
-        Text(
-          DateFormatter.dateRange(startDate, endDate),
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
-      ],
-    );
-  }
-
-  /// Build summary cards
-  Widget _buildSummaryCards() {
-    // Mock data - replace with actual data from providers
-    final totalSpent = Money.fromRupees(12450.75);
-    final avgPerDay = Money.fromRupees(415.36);
-    final expenseCount = 28;
-
-    return Column(
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: DetailedStatCard(
-                title: 'Total Spent',
-                value: totalSpent.format(),
-                icon: Icons.account_balance_wallet,
-                color: Colors.blue,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: AppTokens.space4),
-        Row(
-          children: [
-            Expanded(
-              child: StatCard(
-                title: 'Avg/Day',
-                value: avgPerDay.format(),
-                icon: Icons.trending_up,
-                color: Colors.green,
-              ),
-            ),
-            const SizedBox(width: AppTokens.space4),
-            Expanded(
-              child: StatCard(
-                title: 'Expenses',
-                value: expenseCount.toString(),
-                icon: Icons.receipt,
-                color: Colors.orange,
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  /// Build recent activity
-  Widget _buildRecentActivity() {
-    final theme = Theme.of(context);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Recent Activity',
-          style: theme.textTheme.headlineSmall,
-        ),
-        const SizedBox(height: AppTokens.space4),
-        
-        // Mock recent expenses
-        ..._getMockRecentExpenses().map((expense) => Card(
-          margin: const EdgeInsets.only(bottom: AppTokens.space2),
-          child: ListTile(
-            leading: Container(
-              padding: const EdgeInsets.all(AppTokens.space2),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.primary.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(AppTokens.radiusMd),
-              ),
-              child: Icon(
-                expense.icon,
-                color: theme.colorScheme.primary,
-                size: AppTokens.iconMd,
-              ),
-            ),
-            title: Text(expense.description),
-            subtitle: Text('${expense.category} • ${expense.date}'),
-            trailing: Text(
-              expense.amount.format(),
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-        )),
-      ],
-    );
-  }
-
-  /// Build category breakdown
-  Widget _buildCategoryBreakdown() {
-    final theme = Theme.of(context);
-    final categories = _getMockCategoryData();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Spending by Category',
-          style: theme.textTheme.headlineSmall,
-        ),
-        const SizedBox(height: AppTokens.space4),
-        
-        ...categories.map((category) => Card(
-          margin: const EdgeInsets.only(bottom: AppTokens.space2),
-          child: Padding(
-            padding: AppTokens.cardPadding,
-            child: Column(
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          return Expanded(
+            child: GestureDetector(
+              onTap: () {
+                setState(() {
+                  _selectedMode = mode;
+                });
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeInOut,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppTokens.space4,
+                  vertical: AppTokens.space3,
+                ),
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? Theme.of(context).colorScheme.primary
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.horizontal(
+                    left: isFirst ? const Radius.circular(AppTokens.radiusLg) : Radius.zero,
+                    right: isLast ? const Radius.circular(AppTokens.radiusLg) : Radius.zero,
+                  ),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(AppTokens.space2),
-                          decoration: BoxDecoration(
-                            color: category.color.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(AppTokens.radiusMd),
-                          ),
-                          child: Icon(
-                            category.icon,
-                            color: category.color,
-                            size: AppTokens.iconMd,
-                          ),
-                        ),
-                        const SizedBox(width: AppTokens.space3),
-                        Text(
-                          category.name,
-                          style: theme.textTheme.titleMedium,
-                        ),
-                      ],
+                    Text(
+                      mode.displayName,
+                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        color: isSelected
+                            ? Theme.of(context).colorScheme.onPrimary
+                            : Theme.of(context).colorScheme.onSurfaceVariant,
+                        fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                      ),
+                      textAlign: TextAlign.center,
                     ),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Text(
-                          category.amount.format(),
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        Text(
-                          '${category.percentage.toStringAsFixed(1)}%',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
+                    const SizedBox(height: AppTokens.space1),
+                    Text(
+                      mode.description,
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: isSelected
+                            ? Theme.of(context).colorScheme.onPrimary.withOpacity(0.8)
+                            : Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.7),
+                      ),
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),
-                const SizedBox(height: AppTokens.space2),
-                LinearProgressIndicator(
-                  value: category.percentage / 100,
-                  backgroundColor: category.color.withOpacity(0.1),
-                  valueColor: AlwaysStoppedAnimation<Color>(category.color),
-                ),
-              ],
+              ),
             ),
-          ),
-        )),
-      ],
+          );
+        }).toList(),
+      ),
     );
   }
 
-  /// Build spending trends
-  Widget _buildSpendingTrends() {
-    final theme = Theme.of(context);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Spending Trends',
-          style: theme.textTheme.headlineSmall,
-        ),
-        const SizedBox(height: AppTokens.space4),
-        
-        Card(
-          child: Padding(
-            padding: AppTokens.cardPaddingLarge,
-            child: Column(
-              children: [
-                Text(
-                  'Chart visualization would go here',
-                  style: theme.textTheme.bodyLarge,
-                ),
-                const SizedBox(height: AppTokens.space4),
-                Container(
-                  height: 200,
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.surfaceVariant.withOpacity(0.3),
-                    borderRadius: BorderRadius.circular(AppTokens.radiusLg),
-                  ),
-                  child: Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.bar_chart,
-                          size: 48,
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                        const SizedBox(height: AppTokens.space2),
-                        Text(
-                          'Spending chart placeholder',
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
+  Widget _buildThisMonthView() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(AppTokens.space4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Summary cards
+          _buildSummaryCards(),
+          
+          const SizedBox(height: AppTokens.space6),
+          
+          // Category breakdown chart
+          _buildCategoryChart(),
+          
+          const SizedBox(height: AppTokens.space6),
+          
+          // Top categories list
+          _buildTopCategoriesList(),
+          
+          const SizedBox(height: AppTokens.space6),
+          
+          // Top partners (for split expenses)
+          if (_selectedMode == AnalyticsMode.consumption)
+            _buildTopPartnersList(),
+        ],
+      ),
     );
   }
 
-  /// Get date range for selected period
-  (DateTime, DateTime) _getDateRange() {
-    final now = DateTime.now();
+  Widget _buildLast6MonthsView() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(AppTokens.space4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Monthly trend chart
+          _buildMonthlyTrendChart(),
+          
+          const SizedBox(height: AppTokens.space6),
+          
+          // Category trends
+          _buildCategoryTrends(),
+          
+          const SizedBox(height: AppTokens.space6),
+          
+          // Monthly summary
+          _buildMonthlySummary(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSummaryCards() {
+    // Mock data - will be replaced with real analytics
+    final totalAmount = _selectedMode == AnalyticsMode.consumption
+        ? Money.fromRupees(12500.0)
+        : Money.fromRupees(18750.0);
     
-    return switch (_selectedRange) {
-      DateRange.thisWeek => (
-        DateFormatter.startOfWeek(now),
-        DateFormatter.endOfWeek(now),
-      ),
-      DateRange.thisMonth => (
-        DateFormatter.startOfMonth(now),
-        DateFormatter.endOfMonth(now),
-      ),
-      DateRange.thisYear => (
-        DateFormatter.startOfYear(now),
-        DateFormatter.endOfYear(now),
-      ),
-      DateRange.last30Days => (
-        now.subtract(const Duration(days: 30)),
-        now,
-      ),
-      DateRange.last90Days => (
-        now.subtract(const Duration(days: 90)),
-        now,
-      ),
-    };
+    final avgDaily = Money.fromRupees(totalAmount.rupees / 30);
+    final transactionCount = _selectedMode == AnalyticsMode.consumption ? 45 : 32;
+
+    return Row(
+      children: [
+        Expanded(
+          child: StatCard(
+            title: _selectedMode == AnalyticsMode.consumption ? 'Total Consumption' : 'Total Cashflow',
+            value: totalAmount.formatDisplay(),
+            color: Theme.of(context).colorScheme.primary,
+            icon: _selectedMode == AnalyticsMode.consumption ? Icons.pie_chart : Icons.trending_up,
+          ),
+        ),
+        const SizedBox(width: AppTokens.space3),
+        Expanded(
+          child: StatCard(
+            title: 'Daily Average',
+            value: avgDaily.formatDisplay(),
+            color: Theme.of(context).colorScheme.secondary,
+            icon: Icons.calendar_today,
+          ),
+        ),
+        const SizedBox(width: AppTokens.space3),
+        Expanded(
+          child: StatCard(
+            title: 'Transactions',
+            value: transactionCount.toString(),
+            color: Theme.of(context).colorScheme.tertiary,
+            icon: Icons.receipt_long,
+          ),
+        ),
+      ],
+    );
   }
 
-  /// Get mock recent expenses
-  List<MockExpense> _getMockRecentExpenses() {
+  Widget _buildCategoryChart() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(AppTokens.space4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Category Breakdown',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: AppTokens.space4),
+            SizedBox(
+              height: 200,
+              child: PieChart(
+                PieChartData(
+                  sections: _getMockPieChartSections(),
+                  centerSpaceRadius: 40,
+                  sectionsSpace: 2,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTopCategoriesList() {
+    final categories = _getMockTopCategories();
+    
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(AppTokens.space4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Top Categories',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: AppTokens.space3),
+            ...categories.map((category) => _buildCategoryListItem(category)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTopPartnersList() {
+    final partners = _getMockTopPartners();
+    
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(AppTokens.space4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Top Partners',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: AppTokens.space3),
+            ...partners.map((partner) => _buildPartnerListItem(partner)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMonthlyTrendChart() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(AppTokens.space4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Monthly Trend',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: AppTokens.space4),
+            SizedBox(
+              height: 200,
+              child: LineChart(
+                LineChartData(
+                  gridData: const FlGridData(show: true),
+                  titlesData: const FlTitlesData(show: true),
+                  borderData: FlBorderData(show: true),
+                  lineBarsData: [
+                    LineChartBarData(
+                      spots: _getMockLineChartSpots(),
+                      isCurved: true,
+                      color: Theme.of(context).colorScheme.primary,
+                      barWidth: 3,
+                      dotData: const FlDotData(show: false),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCategoryTrends() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(AppTokens.space4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Category Trends',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: AppTokens.space3),
+            const Text('Category trend analysis - Coming soon'),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMonthlySummary() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(AppTokens.space4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Monthly Summary',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: AppTokens.space3),
+            const Text('Monthly breakdown - Coming soon'),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCategoryListItem(MockCategoryData category) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppTokens.space2),
+      child: Row(
+        children: [
+          Text(
+            category.emoji,
+            style: const TextStyle(fontSize: 20),
+          ),
+          const SizedBox(width: AppTokens.space2),
+          Expanded(
+            child: Text(
+              category.name,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                category.amount.formatDisplay(),
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              Text(
+                '${category.percentage.toStringAsFixed(1)}%',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPartnerListItem(MockPartnerData partner) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppTokens.space2),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 16,
+            child: Text(partner.name[0]),
+          ),
+          const SizedBox(width: AppTokens.space2),
+          Expanded(
+            child: Text(
+              partner.name,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                partner.amount.formatDisplay(),
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              Text(
+                '${partner.transactionCount} transactions',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Mock data methods
+  List<PieChartSectionData> _getMockPieChartSections() {
+    final colors = [
+      Theme.of(context).colorScheme.primary,
+      Theme.of(context).colorScheme.secondary,
+      Theme.of(context).colorScheme.tertiary,
+      Theme.of(context).colorScheme.error,
+      Theme.of(context).colorScheme.outline,
+    ];
+
     return [
-      MockExpense(
-        description: 'Grocery Shopping',
-        category: 'Groceries',
-        amount: Money.fromRupees(850.50),
-        date: 'Today',
-        icon: Icons.shopping_cart,
-      ),
-      MockExpense(
-        description: 'Lunch at Restaurant',
-        category: 'Food',
-        amount: Money.fromRupees(450.00),
-        date: 'Yesterday',
-        icon: Icons.restaurant,
-      ),
-      MockExpense(
-        description: 'Uber Ride',
-        category: 'Transport',
-        amount: Money.fromRupees(120.75),
-        date: '2 days ago',
-        icon: Icons.directions_car,
-      ),
+      PieChartSectionData(value: 35, color: colors[0], title: 'Food\n35%', radius: 60),
+      PieChartSectionData(value: 25, color: colors[1], title: 'Transport\n25%', radius: 60),
+      PieChartSectionData(value: 20, color: colors[2], title: 'Shopping\n20%', radius: 60),
+      PieChartSectionData(value: 12, color: colors[3], title: 'Bills\n12%', radius: 60),
+      PieChartSectionData(value: 8, color: colors[4], title: 'Others\n8%', radius: 60),
     ];
   }
 
-  /// Get mock category data
-  List<MockCategory> _getMockCategoryData() {
+  List<FlSpot> _getMockLineChartSpots() {
     return [
-      MockCategory(
-        name: 'Food',
-        amount: Money.fromRupees(4200.50),
-        percentage: 33.7,
-        color: Colors.orange,
-        icon: Icons.restaurant,
-      ),
-      MockCategory(
-        name: 'Transport',
-        amount: Money.fromRupees(2800.25),
-        percentage: 22.5,
-        color: Colors.blue,
-        icon: Icons.directions_car,
-      ),
-      MockCategory(
-        name: 'Groceries',
-        amount: Money.fromRupees(2100.00),
-        percentage: 16.9,
-        color: Colors.green,
-        icon: Icons.shopping_cart,
-      ),
-      MockCategory(
-        name: 'Entertainment',
-        amount: Money.fromRupees(1500.75),
-        percentage: 12.1,
-        color: Colors.purple,
-        icon: Icons.movie,
-      ),
-      MockCategory(
-        name: 'Others',
-        amount: Money.fromRupees(1849.25),
-        percentage: 14.8,
-        color: Colors.grey,
-        icon: Icons.more_horiz,
-      ),
+      const FlSpot(0, 8000),
+      const FlSpot(1, 12000),
+      const FlSpot(2, 9500),
+      const FlSpot(3, 15000),
+      const FlSpot(4, 11000),
+      const FlSpot(5, 12500),
     ];
   }
 
-  /// Handle refresh
-  Future<void> _onRefresh() async {
-    // Refresh analytics data
-    await Future.delayed(const Duration(seconds: 1)); // Mock delay
+  List<MockCategoryData> _getMockTopCategories() {
+    return [
+      MockCategoryData('Food', '🍽️', Money.fromRupees(4375.0), 35.0),
+      MockCategoryData('Transport', '🚕', Money.fromRupees(3125.0), 25.0),
+      MockCategoryData('Shopping', '🛍️', Money.fromRupees(2500.0), 20.0),
+      MockCategoryData('Bills', '🧾', Money.fromRupees(1500.0), 12.0),
+      MockCategoryData('Entertainment', '🎬', Money.fromRupees(1000.0), 8.0),
+    ];
+  }
+
+  List<MockPartnerData> _getMockTopPartners() {
+    return [
+      MockPartnerData('Alice', Money.fromRupees(3200.0), 12),
+      MockPartnerData('Bob', Money.fromRupees(2800.0), 8),
+      MockPartnerData('Charlie', Money.fromRupees(2100.0), 6),
+      MockPartnerData('Diana', Money.fromRupees(1500.0), 4),
+    ];
   }
 }
 
-/// Date range options
-enum DateRange {
-  thisWeek('This Week'),
-  thisMonth('This Month'),
-  thisYear('This Year'),
-  last30Days('Last 30 Days'),
-  last90Days('Last 90 Days');
+/// Analytics mode enumeration
+enum AnalyticsMode {
+  consumption,
+  cashflow;
 
-  const DateRange(this.displayName);
-  final String displayName;
+  String get displayName => switch (this) {
+    AnalyticsMode.consumption => 'Consumption',
+    AnalyticsMode.cashflow => 'Cashflow',
+  };
+
+  String get description => switch (this) {
+    AnalyticsMode.consumption => 'My Share',
+    AnalyticsMode.cashflow => 'Out-of-Pocket',
+  };
 }
 
-/// Mock expense data
-class MockExpense {
-  final String description;
-  final String category;
-  final Money amount;
-  final String date;
-  final IconData icon;
-
-  const MockExpense({
-    required this.description,
-    required this.category,
-    required this.amount,
-    required this.date,
-    required this.icon,
-  });
-}
-
-/// Mock category data
-class MockCategory {
+/// Mock data classes
+class MockCategoryData {
   final String name;
+  final String emoji;
   final Money amount;
   final double percentage;
-  final Color color;
-  final IconData icon;
 
-  const MockCategory({
-    required this.name,
-    required this.amount,
-    required this.percentage,
-    required this.color,
-    required this.icon,
-  });
+  const MockCategoryData(this.name, this.emoji, this.amount, this.percentage);
+}
+
+class MockPartnerData {
+  final String name;
+  final Money amount;
+  final int transactionCount;
+
+  const MockPartnerData(this.name, this.amount, this.transactionCount);
 }

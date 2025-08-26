@@ -4,16 +4,24 @@ import 'package:go_router/go_router.dart';
 
 import '../../app/theme/tokens.dart';
 import '../../core/money/money.dart';
+import '../../core/utils/date_fmt.dart';
+import '../../data/models/expense_type.dart';
+import '../../data/models/category.dart';
+import '../../widgets/buttons.dart';
+import '../../widgets/inputs.dart';
+import '../../widgets/category_chip.dart';
+import 'widgets/expense_type_toggle.dart';
+import 'widgets/category_picker.dart';
 
-/// Screen for adding or editing expenses
+/// New expense screen with Split ⇄ Individual toggle and adaptive layout
 class NewExpenseScreen extends ConsumerStatefulWidget {
-  final String? groupId;
   final String? expenseId;
+  final String? groupId;
 
   const NewExpenseScreen({
     super.key,
-    this.groupId,
     this.expenseId,
+    this.groupId,
   });
 
   @override
@@ -26,22 +34,21 @@ class _NewExpenseScreenState extends ConsumerState<NewExpenseScreen> {
   final _amountController = TextEditingController();
   final _notesController = TextEditingController();
 
-  String _selectedCategory = 'Food';
-  String _selectedGroup = '';
-  String _selectedPayer = '';
-  DateTime _selectedDate = DateTime.now();
-  ExpenseType _expenseType = ExpenseType.split;
-  final Map<String, double> _splitAmounts = {};
-
+  // Form state
+  ExpenseFormState _formState = const ExpenseFormState();
+  
+  // Mock data - will be replaced with real providers
+  final List<Category> _allCategories = DefaultCategories.categories;
+  final List<Category> _recentCategories = [];
+  final List<String> _groupMembers = ['Alice', 'Bob', 'Charlie'];
+  
   bool get _isEditing => widget.expenseId != null;
+  bool get _isTabletLayout => MediaQuery.of(context).size.width >= AppTokens.breakpointMedium;
 
   @override
   void initState() {
     super.initState();
-    if (widget.groupId != null) {
-      _selectedGroup = widget.groupId!;
-    }
-    _loadExpenseData();
+    _initializeForm();
   }
 
   @override
@@ -52,298 +59,135 @@ class _NewExpenseScreenState extends ConsumerState<NewExpenseScreen> {
     super.dispose();
   }
 
+  void _initializeForm() {
+    // Initialize form with default values
+    _formState = _formState.copyWith(
+      groupId: widget.groupId,
+      type: widget.groupId != null ? ExpenseType.split : ExpenseType.individual,
+      date: DateTime.now(),
+      payerId: 'current_user', // Will be replaced with actual user ID
+    );
+
+    // Set default category
+    if (_allCategories.isNotEmpty) {
+      _formState = _formState.copyWith(category: _allCategories.first.name);
+    }
+  }
+
+  void _updateFormState(ExpenseFormState newState) {
+    setState(() {
+      _formState = newState;
+    });
+  }
+
+  void _onExpenseTypeChanged(ExpenseType type) {
+    _updateFormState(_formState.copyWith(type: type));
+  }
+
+  void _onCategorySelected(Category category) {
+    _updateFormState(_formState.copyWith(category: category.name));
+  }
+
+  void _onSplitMethodChanged(SplitMethod method) {
+    _updateFormState(_formState.copyWith(splitMethod: method));
+  }
+
+  void _showCategoryPicker() {
+    if (_isTabletLayout) {
+      // For tablet, category picker is shown in side pane
+      return;
+    }
+
+    // Show bottom sheet for mobile
+    showCategoryPickerSheet(
+      context: context,
+      categories: _allCategories,
+      recentCategories: _recentCategories,
+      selectedCategoryId: _allCategories
+          .where((c) => c.name == _formState.category)
+          .firstOrNull?.id,
+    ).then((category) {
+      if (category != null) {
+        _onCategorySelected(category);
+      }
+    });
+  }
+
+  void _saveExpense() {
+    if (!_formKey.currentState!.validate() || !_formState.isValid) {
+      // Show validation errors
+      final errors = _formState.validationErrors;
+      if (errors.isNotEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(errors.first),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+      return;
+    }
+
+    // TODO: Implement actual save logic
+    final message = _isEditing ? 'Expense updated!' : 'Expense saved!';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+
+    context.pop();
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-
+    
     return Scaffold(
       appBar: AppBar(
         title: Text(_isEditing ? 'Edit Expense' : 'New Expense'),
         actions: [
-          TextButton(
-            onPressed: _saveExpense,
-            child: Text(_isEditing ? 'Update' : 'Save'),
-          ),
+          if (_isEditing)
+            IconButton(
+              onPressed: () {
+                // TODO: Implement delete
+              },
+              icon: const Icon(Icons.delete_outline),
+            ),
         ],
       ),
-      body: Form(
-        key: _formKey,
-        child: ListView(
-          padding: AppTokens.screenPadding,
+      body: _isTabletLayout ? _buildTabletLayout() : _buildPhoneLayout(),
+      bottomNavigationBar: _buildBottomBar(),
+    );
+  }
+
+  Widget _buildPhoneLayout() {
+    return Form(
+      key: _formKey,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(AppTokens.space4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Description field
-            TextFormField(
-              controller: _descriptionController,
-              decoration: const InputDecoration(
-                labelText: 'Description',
-                hintText: 'What was this expense for?',
-                prefixIcon: Icon(Icons.description),
-              ),
-              validator: (value) {
-                if (value == null || value.trim().isEmpty) {
-                  return 'Please enter a description';
-                }
-                return null;
-              },
+            // Expense type toggle
+            ExpenseTypeToggle(
+              selectedType: _formState.type,
+              onTypeChanged: _onExpenseTypeChanged,
             ),
-
-            const SizedBox(height: AppTokens.space4),
-
-            // Amount field
-            TextFormField(
-              controller: _amountController,
-              decoration: const InputDecoration(
-                labelText: 'Amount',
-                hintText: '0.00',
-                prefixIcon: Icon(Icons.currency_rupee),
-              ),
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              validator: (value) {
-                if (value == null || value.trim().isEmpty) {
-                  return 'Please enter an amount';
-                }
-                final amount = double.tryParse(value);
-                if (amount == null || amount <= 0) {
-                  return 'Please enter a valid amount';
-                }
-                return null;
-              },
-            ),
-
-            const SizedBox(height: AppTokens.space4),
-
-            // Category dropdown
-            DropdownButtonFormField<String>(
-              value: _selectedCategory,
-              decoration: const InputDecoration(
-                labelText: 'Category',
-                prefixIcon: Icon(Icons.category),
-              ),
-              items: _getCategories().map((category) {
-                return DropdownMenuItem(
-                  value: category,
-                  child: Row(
-                    children: [
-                      Text(_getCategoryEmoji(category)),
-                      const SizedBox(width: AppTokens.space2),
-                      Text(category),
-                    ],
-                  ),
-                );
-              }).toList(),
-              onChanged: (value) {
-                if (value != null) {
-                  setState(() {
-                    _selectedCategory = value;
-                  });
-                }
-              },
-            ),
-
-            const SizedBox(height: AppTokens.space4),
-
-            // Date picker
-            InkWell(
-              onTap: _selectDate,
-              child: InputDecorator(
-                decoration: const InputDecoration(
-                  labelText: 'Date',
-                  prefixIcon: Icon(Icons.calendar_today),
-                ),
-                child: Text(
-                  '${_selectedDate.day}/${_selectedDate.month}/${_selectedDate.year}',
-                ),
-              ),
-            ),
-
+            
             const SizedBox(height: AppTokens.space6),
-
-            // Expense type selector
-            Text(
-              'Expense Type',
-              style: theme.textTheme.titleMedium,
-            ),
-            const SizedBox(height: AppTokens.space2),
-            SegmentedButton<ExpenseType>(
-              segments: const [
-                ButtonSegment(
-                  value: ExpenseType.split,
-                  label: Text('Split'),
-                  icon: Icon(Icons.group),
-                ),
-                ButtonSegment(
-                  value: ExpenseType.individual,
-                  label: Text('Individual'),
-                  icon: Icon(Icons.person),
-                ),
-              ],
-              selected: {_expenseType},
-              onSelectionChanged: (selection) {
-                setState(() {
-                  _expenseType = selection.first;
-                });
-              },
-            ),
-
-            const SizedBox(height: AppTokens.space6),
-
-            // Group selector (for split expenses)
-            if (_expenseType == ExpenseType.split) ...[
-              DropdownButtonFormField<String>(
-                value: _selectedGroup.isEmpty ? null : _selectedGroup,
-                decoration: const InputDecoration(
-                  labelText: 'Group',
-                  prefixIcon: Icon(Icons.group),
-                ),
-                items: _getGroups().map((group) {
-                  return DropdownMenuItem(
-                    value: group.id,
-                    child: Text(group.name),
-                  );
-                }).toList(),
-                onChanged: (value) {
-                  if (value != null) {
-                    setState(() {
-                      _selectedGroup = value;
-                    });
-                  }
-                },
-                validator: (value) {
-                  if (_expenseType == ExpenseType.split && (value == null || value.isEmpty)) {
-                    return 'Please select a group';
-                  }
-                  return null;
-                },
-              ),
+            
+            // Individual expense info banner
+            if (_formState.type == ExpenseType.individual) ...[
+              const IndividualExpenseInfo(),
               const SizedBox(height: AppTokens.space4),
             ],
-
-            // Payer selector
-            DropdownButtonFormField<String>(
-              value: _selectedPayer.isEmpty ? null : _selectedPayer,
-              decoration: const InputDecoration(
-                labelText: 'Paid by',
-                prefixIcon: Icon(Icons.person),
-              ),
-              items: _getMembers().map((member) {
-                return DropdownMenuItem(
-                  value: member.id,
-                  child: Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 12,
-                        child: Text(member.avatarEmoji ?? member.name[0]),
-                      ),
-                      const SizedBox(width: AppTokens.space2),
-                      Text(member.name),
-                    ],
-                  ),
-                );
-              }).toList(),
-              onChanged: (value) {
-                if (value != null) {
-                  setState(() {
-                    _selectedPayer = value;
-                  });
-                }
-              },
-              validator: (value) {
-                if (value == null || value.isEmpty) {
-                  return 'Please select who paid';
-                }
-                return null;
-              },
-            ),
-
-            const SizedBox(height: AppTokens.space4),
-
-            // Split details (for split expenses)
-            if (_expenseType == ExpenseType.split) ...[
-              const SizedBox(height: AppTokens.space4),
-              Card(
-                child: Padding(
-                  padding: AppTokens.cardPadding,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            'Split Details',
-                            style: theme.textTheme.titleMedium,
-                          ),
-                          TextButton(
-                            onPressed: _splitEqually,
-                            child: const Text('Split Equally'),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: AppTokens.space2),
-                      ..._getMembers().map((member) => Padding(
-                        padding: const EdgeInsets.symmetric(vertical: AppTokens.space1),
-                        child: Row(
-                          children: [
-                            CircleAvatar(
-                              radius: 16,
-                              child: Text(member.avatarEmoji ?? member.name[0]),
-                            ),
-                            const SizedBox(width: AppTokens.space3),
-                            Expanded(child: Text(member.name)),
-                            SizedBox(
-                              width: 100,
-                              child: TextFormField(
-                                initialValue: _splitAmounts[member.id]?.toString() ?? '0',
-                                decoration: const InputDecoration(
-                                  prefixText: '₹',
-                                  isDense: true,
-                                ),
-                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                onChanged: (value) {
-                                  final amount = double.tryParse(value) ?? 0;
-                                  _splitAmounts[member.id] = amount;
-                                },
-                              ),
-                            ),
-                          ],
-                        ),
-                      )),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-
-            const SizedBox(height: AppTokens.space4),
-
-            // Notes field
-            TextFormField(
-              controller: _notesController,
-              decoration: const InputDecoration(
-                labelText: 'Notes (optional)',
-                hintText: 'Add any additional notes',
-                prefixIcon: Icon(Icons.note),
-              ),
-              maxLines: 3,
-            ),
-
-            const SizedBox(height: AppTokens.space6),
-
-            // Save button
-            ElevatedButton(
-              onPressed: _saveExpense,
-              child: Text(_isEditing ? 'Update Expense' : 'Save Expense'),
-            ),
-
-            if (_isEditing) ...[
-              const SizedBox(height: AppTokens.space2),
-              OutlinedButton(
-                onPressed: _deleteExpense,
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.red,
-                ),
-                child: const Text('Delete Expense'),
-              ),
+            
+            // Common fields
+            _buildCommonFields(),
+            
+            // Split-specific fields
+            if (_formState.type == ExpenseType.split) ...[
+              const SizedBox(height: AppTokens.space6),
+              _buildSplitFields(),
             ],
           ],
         ),
@@ -351,158 +195,558 @@ class _NewExpenseScreenState extends ConsumerState<NewExpenseScreen> {
     );
   }
 
-  /// Load expense data for editing
-  void _loadExpenseData() {
-    if (!_isEditing) return;
-
-    // Mock data loading - replace with actual data loading
-    _descriptionController.text = 'Hotel Booking';
-    _amountController.text = '1200.00';
-    _selectedCategory = 'Accommodation';
-    _selectedPayer = '1';
-    _selectedDate = DateTime.now().subtract(const Duration(days: 2));
-  }
-
-  /// Get available categories
-  List<String> _getCategories() {
-    return [
-      'Food',
-      'Transport',
-      'Groceries',
-      'Utilities',
-      'Shopping',
-      'Entertainment',
-      'Health',
-      'Education',
-      'Bills',
-      'Accommodation',
-      'Miscellaneous',
-    ];
-  }
-
-  /// Get category emoji
-  String _getCategoryEmoji(String category) {
-    return switch (category.toLowerCase()) {
-      'food' => '🍽️',
-      'transport' => '🚕',
-      'groceries' => '🛒',
-      'utilities' => '💡',
-      'shopping' => '🛍️',
-      'entertainment' => '🎬',
-      'health' => '🏥',
-      'education' => '🎓',
-      'bills' => '🧾',
-      'accommodation' => '🏨',
-      _ => '🏷️',
-    };
-  }
-
-  /// Get available groups
-  List<MockGroup> _getGroups() {
-    return [
-      const MockGroup(id: '1', name: 'Weekend Trip'),
-      const MockGroup(id: '2', name: 'Roommates'),
-      const MockGroup(id: '3', name: 'Office Lunch'),
-    ];
-  }
-
-  /// Get available members
-  List<MockMember> _getMembers() {
-    return [
-      const MockMember(id: '1', name: 'You', avatarEmoji: '😊'),
-      const MockMember(id: '2', name: 'Alice', avatarEmoji: '👩'),
-      const MockMember(id: '3', name: 'Bob', avatarEmoji: '👨'),
-    ];
-  }
-
-  /// Select date
-  Future<void> _selectDate() async {
-    final date = await showDatePicker(
-      context: context,
-      initialDate: _selectedDate,
-      firstDate: DateTime.now().subtract(const Duration(days: 365)),
-      lastDate: DateTime.now().add(const Duration(days: 30)),
+  Widget _buildTabletLayout() {
+    return Row(
+      children: [
+        // Left pane - Form
+        Expanded(
+          flex: 2,
+          child: Form(
+            key: _formKey,
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(AppTokens.space6),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Expense type toggle
+                  ExpenseTypeToggle(
+                    selectedType: _formState.type,
+                    onTypeChanged: _onExpenseTypeChanged,
+                  ),
+                  
+                  const SizedBox(height: AppTokens.space6),
+                  
+                  // Individual expense info banner
+                  if (_formState.type == ExpenseType.individual) ...[
+                    const IndividualExpenseInfo(),
+                    const SizedBox(height: AppTokens.space4),
+                  ],
+                  
+                  // Common fields
+                  _buildCommonFields(),
+                  
+                  // Split-specific fields
+                  if (_formState.type == ExpenseType.split) ...[
+                    const SizedBox(height: AppTokens.space6),
+                    _buildSplitFields(),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
+        
+        // Right pane - Category picker and preview
+        Expanded(
+          child: Column(
+            children: [
+              // Category picker pane
+              Expanded(
+                child: CategoryPicker(
+                  categories: _allCategories,
+                  recentCategories: _recentCategories,
+                  selectedCategoryId: _allCategories
+                      .where((c) => c.name == _formState.category)
+                      .firstOrNull?.id,
+                  onCategorySelected: _onCategorySelected,
+                  isExpanded: true,
+                ),
+              ),
+              
+              // Preview section
+              if (_formState.type == ExpenseType.split)
+                Container(
+                  height: 200,
+                  padding: const EdgeInsets.all(AppTokens.space4),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3),
+                    border: Border(
+                      top: BorderSide(
+                        color: Theme.of(context).colorScheme.outline.withOpacity(0.2),
+                      ),
+                    ),
+                  ),
+                  child: _buildSplitPreview(),
+                ),
+            ],
+          ),
+        ),
+      ],
     );
+  }
 
-    if (date != null) {
-      setState(() {
-        _selectedDate = date;
-      });
+  Widget _buildCommonFields() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Description
+        AppTextFormField(
+          controller: _descriptionController,
+          labelText: 'Description',
+          hintText: 'What was this expense for?',
+          validator: (value) {
+            if (value == null || value.trim().isEmpty) {
+              return 'Description is required';
+            }
+            return null;
+          },
+          onChanged: (value) {
+            _updateFormState(_formState.copyWith(description: value));
+          },
+        ),
+
+        const SizedBox(height: AppTokens.space4),
+
+        // Amount
+        AppTextFormField(
+          controller: _amountController,
+          labelText: 'Amount',
+          hintText: '0.00',
+          prefixText: '₹ ',
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          validator: (value) {
+            if (value == null || value.trim().isEmpty) {
+              return 'Amount is required';
+            }
+            final amount = double.tryParse(value);
+            if (amount == null || amount <= 0) {
+              return 'Enter a valid amount';
+            }
+            return null;
+          },
+          onChanged: (value) {
+            _updateFormState(_formState.copyWith(amount: value));
+          },
+        ),
+
+        const SizedBox(height: AppTokens.space4),
+
+        // Category field
+        _buildCategoryField(),
+
+        const SizedBox(height: AppTokens.space4),
+
+        // Payer (for split) or just show current user (for individual)
+        if (_formState.type == ExpenseType.split)
+          _buildPayerField()
+        else
+          _buildCurrentUserField(),
+
+        const SizedBox(height: AppTokens.space4),
+
+        // Date
+        _buildDateField(),
+
+        const SizedBox(height: AppTokens.space4),
+
+        // Notes
+        AppTextFormField(
+          controller: _notesController,
+          labelText: 'Notes (Optional)',
+          hintText: 'Add any additional details...',
+          maxLines: 3,
+          onChanged: (value) {
+            _updateFormState(_formState.copyWith(notes: value));
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCategoryField() {
+    final selectedCategory = _allCategories
+        .where((c) => c.name == _formState.category)
+        .firstOrNull;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Category',
+          style: Theme.of(context).textTheme.labelLarge?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: AppTokens.space2),
+
+        // Quick category chips (recent/favorites)
+        if (_recentCategories.isNotEmpty && !_isTabletLayout) ...[
+          QuickCategorySelector(
+            quickCategories: _recentCategories.take(6).toList(),
+            selectedCategoryId: selectedCategory?.id,
+            onCategorySelected: _onCategorySelected,
+            onShowAllCategories: _showCategoryPicker,
+            placeholder: 'Tap to select category',
+          ),
+        ] else ...[
+          // Category selection button
+          InkWell(
+            onTap: _showCategoryPicker,
+            borderRadius: BorderRadius.circular(AppTokens.radiusMd),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(AppTokens.space3),
+              decoration: BoxDecoration(
+                border: Border.all(
+                  color: Theme.of(context).colorScheme.outline.withOpacity(0.5),
+                ),
+                borderRadius: BorderRadius.circular(AppTokens.radiusMd),
+              ),
+              child: Row(
+                children: [
+                  if (selectedCategory?.emoji != null) ...[
+                    Text(
+                      selectedCategory!.emoji!,
+                      style: const TextStyle(fontSize: 20),
+                    ),
+                    const SizedBox(width: AppTokens.space2),
+                  ],
+                  Expanded(
+                    child: Text(
+                      selectedCategory?.name ?? 'Select category',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: selectedCategory != null
+                            ? Theme.of(context).colorScheme.onSurface
+                            : Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    Icons.arrow_drop_down,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildPayerField() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Paid by',
+          style: Theme.of(context).textTheme.labelLarge?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: AppTokens.space2),
+        DropdownButtonFormField<String>(
+          value: _formState.payerId.isNotEmpty ? _formState.payerId : null,
+          decoration: const InputDecoration(
+            hintText: 'Select who paid',
+          ),
+          items: _groupMembers.map((member) {
+            return DropdownMenuItem(
+              value: member,
+              child: Text(member),
+            );
+          }).toList(),
+          onChanged: (value) {
+            if (value != null) {
+              _updateFormState(_formState.copyWith(payerId: value));
+            }
+          },
+          validator: (value) {
+            if (value == null || value.isEmpty) {
+              return 'Please select who paid';
+            }
+            return null;
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCurrentUserField() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Paid by',
+          style: Theme.of(context).textTheme.labelLarge?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: AppTokens.space2),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(AppTokens.space3),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
+            borderRadius: BorderRadius.circular(AppTokens.radiusMd),
+            border: Border.all(
+              color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
+            ),
+          ),
+          child: Text(
+            'You', // Will be replaced with actual user name
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDateField() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Date',
+          style: Theme.of(context).textTheme.labelLarge?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: AppTokens.space2),
+        InkWell(
+          onTap: () async {
+            final date = await showDatePicker(
+              context: context,
+              initialDate: _formState.date ?? DateTime.now(),
+              firstDate: DateTime.now().subtract(const Duration(days: 365)),
+              lastDate: DateTime.now().add(const Duration(days: 30)),
+            );
+            if (date != null) {
+              _updateFormState(_formState.copyWith(date: date));
+            }
+          },
+          borderRadius: BorderRadius.circular(AppTokens.radiusMd),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(AppTokens.space3),
+            decoration: BoxDecoration(
+              border: Border.all(
+                color: Theme.of(context).colorScheme.outline.withOpacity(0.5),
+              ),
+              borderRadius: BorderRadius.circular(AppTokens.radiusMd),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.calendar_today,
+                  size: 20,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: AppTokens.space2),
+                Text(
+                  _formState.date != null
+                      ? DateFmt.format(_formState.date!)
+                      : 'Select date',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSplitFields() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Split method selector
+        SplitMethodSelector(
+          selectedMethod: _formState.splitMethod,
+          onMethodChanged: _onSplitMethodChanged,
+        ),
+
+        const SizedBox(height: AppTokens.space4),
+
+        // Split details based on method
+        _buildSplitDetails(),
+      ],
+    );
+  }
+
+  Widget _buildSplitDetails() {
+    switch (_formState.splitMethod) {
+      case SplitMethod.equally:
+        return _buildEqualSplitDetails();
+      case SplitMethod.exact:
+        return _buildExactSplitDetails();
+      case SplitMethod.percentage:
+        return _buildPercentageSplitDetails();
     }
   }
 
-  /// Split amount equally among members
-  void _splitEqually() {
-    final amount = double.tryParse(_amountController.text) ?? 0;
-    if (amount <= 0) return;
+  Widget _buildEqualSplitDetails() {
+    final amount = double.tryParse(_formState.amount) ?? 0.0;
+    final perPersonAmount = _groupMembers.isNotEmpty ? amount / _groupMembers.length : 0.0;
 
-    final members = _getMembers();
-    final splitAmount = amount / members.length;
-
-    setState(() {
-      for (final member in members) {
-        _splitAmounts[member.id] = splitAmount;
-      }
-    });
-  }
-
-  /// Save expense
-  void _saveExpense() {
-    if (!_formKey.currentState!.validate()) return;
-
-    // TODO: Implement actual save logic
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(_isEditing ? 'Expense updated!' : 'Expense saved!'),
-      ),
-    );
-
-    context.pop();
-  }
-
-  /// Delete expense
-  void _deleteExpense() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Expense'),
-        content: const Text('Are you sure you want to delete this expense?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Split Details',
+          style: Theme.of(context).textTheme.labelLarge?.copyWith(
+            fontWeight: FontWeight.w600,
           ),
-          TextButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              // TODO: Implement delete logic
-              context.pop();
+        ),
+        const SizedBox(height: AppTokens.space2),
+        Container(
+          padding: const EdgeInsets.all(AppTokens.space3),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3),
+            borderRadius: BorderRadius.circular(AppTokens.radiusMd),
+          ),
+          child: Column(
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Per person:',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                  Text(
+                    Money.fromRupees(perPersonAmount).formatDisplay(),
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppTokens.space2),
+              Text(
+                '${_groupMembers.length} people × ${Money.fromRupees(perPersonAmount).formatDisplay()}',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildExactSplitDetails() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Enter exact amounts for each person',
+          style: Theme.of(context).textTheme.labelLarge?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: AppTokens.space2),
+        // TODO: Implement exact split input fields
+        Container(
+          padding: const EdgeInsets.all(AppTokens.space4),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3),
+            borderRadius: BorderRadius.circular(AppTokens.radiusMd),
+          ),
+          child: const Text('Exact split input - Coming soon'),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPercentageSplitDetails() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Enter percentage for each person',
+          style: Theme.of(context).textTheme.labelLarge?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: AppTokens.space2),
+        // TODO: Implement percentage split input fields
+        Container(
+          padding: const EdgeInsets.all(AppTokens.space4),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3),
+            borderRadius: BorderRadius.circular(AppTokens.radiusMd),
+          ),
+          child: const Text('Percentage split input - Coming soon'),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSplitPreview() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Split Preview',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: AppTokens.space3),
+        Expanded(
+          child: ListView.builder(
+            itemCount: _groupMembers.length,
+            itemBuilder: (context, index) {
+              final member = _groupMembers[index];
+              final amount = double.tryParse(_formState.amount) ?? 0.0;
+              final perPersonAmount = amount / _groupMembers.length;
+
+              return ListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                leading: CircleAvatar(
+                  radius: 16,
+                  child: Text(member[0]),
+                ),
+                title: Text(member),
+                trailing: Text(
+                  Money.fromRupees(perPersonAmount).formatDisplay(),
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              );
             },
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Delete'),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBottomBar() {
+    return Container(
+      padding: EdgeInsets.fromLTRB(
+        AppTokens.space4,
+        AppTokens.space3,
+        AppTokens.space4,
+        AppTokens.space4 + MediaQuery.of(context).padding.bottom,
+      ),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        border: Border(
+          top: BorderSide(
+            color: Theme.of(context).colorScheme.outline.withOpacity(0.2),
+            width: 1,
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: AppButton.primary(
+              onPressed: _saveExpense,
+              child: Text(
+                _formState.type == ExpenseType.split
+                    ? (_isEditing ? 'Update Split' : 'Save Split')
+                    : (_isEditing ? 'Update Individual' : 'Save Individual'),
+              ),
+            ),
           ),
         ],
       ),
     );
   }
-}
-
-/// Expense type enum
-enum ExpenseType { split, individual }
-
-/// Mock group data
-class MockGroup {
-  final String id;
-  final String name;
-
-  const MockGroup({required this.id, required this.name});
-}
-
-/// Mock member data
-class MockMember {
-  final String id;
-  final String name;
-  final String? avatarEmoji;
-
-  const MockMember({required this.id, required this.name, this.avatarEmoji});
 }

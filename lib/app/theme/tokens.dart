@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 class AppTokens {
   AppTokens._();
 
-  // Light theme colors
+  // Light theme colors (exact spec)
   static const lightBg = Color(0xFFF8FAFC);
   static const lightSurface = Color(0xFFFFFFFF);
   static const lightText = Color(0xFF0F172A);
@@ -19,7 +19,7 @@ class AppTokens {
   static const lightWarning = Color(0xFFD97706);
   static const lightSubtle = Color(0xFFEEF2F6);
 
-  // Dark theme colors
+  // Dark theme colors (exact spec)
   static const darkBg = Color(0xFF0B1220);
   static const darkSurface = Color(0xFF111827);
   static const darkText = Color(0xFFE5E7EB);
@@ -34,8 +34,13 @@ class AppTokens {
   static const darkWarning = Color(0xFFF59E0B);
   static const darkSubtle = Color(0xFF0F172A);
 
-  // Typography
-  static const String fontFamily = 'Inter';
+  // Typography (using system fonts initially as per spec)
+  static const String fontFamily = 'System';
+
+  // Responsive breakpoints (as per spec)
+  static const double breakpointCompact = 600.0;  // <600dp
+  static const double breakpointMedium = 840.0;   // 600-840dp
+  // >=840dp is expanded
   
   // Spacing (4pt grid)
   static const double space1 = 4.0;

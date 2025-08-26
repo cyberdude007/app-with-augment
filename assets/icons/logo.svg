@@ -1,0 +1,33 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background Circle -->
+  <circle cx="512" cy="512" r="512" fill="#0D9488"/>
+  
+  <!-- Main Icon - Stylized Wallet/Split Symbol -->
+  <g transform="translate(256, 256)">
+    <!-- Wallet Base -->
+    <rect x="64" y="128" width="384" height="256" rx="32" fill="#FFFFFF" opacity="0.95"/>
+    
+    <!-- Split Line -->
+    <line x1="256" y1="128" x2="256" y2="384" stroke="#0D9488" stroke-width="8" stroke-dasharray="16,8"/>
+    
+    <!-- Left Side - Rupee Symbol -->
+    <g transform="translate(128, 192)">
+      <path d="M0 0h64v16H16v16h48v16H24c8 8 16 16 32 32h-24L8 48H0V32h8V16H0V0z" fill="#0D9488"/>
+    </g>
+    
+    <!-- Right Side - Split Arrows -->
+    <g transform="translate(320, 208)">
+      <!-- Arrow pointing right -->
+      <path d="M0 16L16 0L32 16L16 32L0 16Z" fill="#0D9488"/>
+      <!-- Arrow pointing left -->
+      <path d="M64 16L48 0L32 16L48 32L64 16Z" fill="#0D9488" transform="translate(0, 32)"/>
+    </g>
+    
+    <!-- Decorative Elements -->
+    <circle cx="128" cy="320" r="8" fill="#99F6E4"/>
+    <circle cx="384" cy="320" r="8" fill="#99F6E4"/>
+  </g>
+  
+  <!-- Bottom Text Accent -->
+  <rect x="412" y="768" width="200" height="4" rx="2" fill="#99F6E4"/>
+</svg>
