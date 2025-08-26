@@ -97,6 +97,9 @@ class Money {
     }
   }
 
+  /// Format as display string (alias for toString for spec compatibility)
+  String toDisplayString() => formatDisplay();
+
   /// Format as plain number string (for input fields)
   String toPlainString() {
     if (paise % 100 == 0) {

@@ -14,6 +14,7 @@ import 'daos/settlement_dao.dart';
 import 'daos/reminder_dao.dart';
 import 'daos/settings_dao.dart';
 import 'daos/share_dao.dart';
+import 'daos/category_dao.dart';
 
 part 'app_database.g.dart';
 
@@ -40,6 +41,7 @@ part 'app_database.g.dart';
     ReminderDao,
     SettingsDao,
     ShareDao,
+    CategoryDao,
   ],
 )
 class AppDatabase extends _$AppDatabase {
